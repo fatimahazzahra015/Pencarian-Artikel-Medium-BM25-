@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Pencarian Artikel Berita - BM25</title>
+    
+    <!-- CSS untuk styling tampilan -->
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 150px; /* ruang sisi */
+            padding-top: 40px;
+            padding-bottom: 40px;
+            background: #f4f6f8;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        /* Form pencarian */
+        form {
+            margin-bottom: 30px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Input query pencarian */
+        .query {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            width: 300px; 
+        }
+
+        /* Filter dropdown (tag, penulis, tahun, hasil) */
+        .filter {
+            width: 170px; 
+            padding: 10px;
+            margin: 5px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        /* Tombol pencarian */
+        button {
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        /* Box hasil pencarian */
+        .result {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Skor relevansi (BM25) */
+        .score {
+            color: #e67e22;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        /* Judul hasil */
+        .title a {
+            text-decoration: none;
+            color: #2c3e50;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .title a:hover {
+            text-decoration: underline;
+        }
+
+        /* Info penulis, tag, tahun */
+        .meta {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        /* Konten ringkasan artikel */
+        .content {
+            margin-top: 10px;
+            text-align: justify;
+            line-height: 1.5em;
+        }
+
+        /* Daftar tag */
+        .tag-list {
+            list-style: none;
+            display: inline;
+            padding: 0;
+            margin: 0;
+        }
+
+        .tag-list li {
+            display: inline-block;
+            background: #eee;
+            color: #444;
+            padding: 3px 8px;
+            margin-right: 5px;
+            border-radius: 12px;
+            font-size: 0.85em;
+        }
+
+        /* Gambar artikel */
+        .image-container {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            border-radius: 8px;
+        }
+
+        /* Detail paragraf tambahan */
+        details {
+            margin-top: 10px;
+            font-size: 0.95em;
+        }
+    </style>
+
+    <!-- Script JavaScript untuk fitur "Baca Selengkapnya" -->
+    <script>
+        function toggleDetail(btn) {
+            const detailBox = btn.closest(".read-more-box");
+            const content = detailBox.querySelector(".detail-content");
+            const allBtns = detailBox.querySelectorAll(".toggle-btn");
+
+            if (content.style.display === "none") {
+                content.style.display = "block";        // Tampilkan isi lengkap
+                allBtns[0].style.display = "none";       // Sembunyikan tombol "Baca Selengkapnya"
+            } else {
+                content.style.display = "none";          // Sembunyikan isi lengkap
+                allBtns[0].style.display = "inline-block"; // Tampilkan kembali tombol
+            }
+        }
+    </script>
+
+</head>
+<body>
+    <h1>Pencarian Artikel Medium (BM25)</h1>
+
+    <!-- Form untuk masukkan query & filter -->
+    <form method="post">
+        <!-- Input query -->
+        <input type="text" name="query" class="query" placeholder="Masukkan pencarianmu.." value="{{ query }}" required>
+
+        <!-- Filter berdasarkan tag -->
+        <select name="tag" class="filter">
+            <option value="">-- Semua Tag --</option>
+            {% for tag in tags %}
+                <option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Filter berdasarkan penulis -->
+        <select name="author" class="filter">
+            <option value="">-- Semua Penulis --</option>
+            {% for author in authors %}
+                <option value="{{ author }}" {% if author == selected_author %}selected{% endif %}>{{ author }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Filter berdasarkan tahun -->
+        <input type="text" name="year_filter" class="filter" placeholder="Tahun (mis. 2017)" value="{{ year_filter }}">
+
+        <!-- Pilih jumlah hasil ditampilkan -->
+        <select name="max_results" class="filter">
+            <option value="5" {% if max_results == 5 %}selected{% endif %}>5 Hasil</option>
+            <option value="10" {% if max_results == 10 %}selected{% endif %}>10 Hasil</option>
+            <option value="15" {% if max_results == 15 %}selected{% endif %}>15 Hasil</option>
+            <option value="20" {% if max_results == 20 %}selected{% endif %}>20 Hasil</option>
+        </select>
+
+        <button type="submit">Cari</button>
+    </form>
+
+    <!-- Hasil pencarian -->
+    {% if results %}
+        <p><strong>{{ results|length }} hasil ditemukan.</strong></p>
+        {% for item in results %}
+            <div class="result">
+                <!-- Judul artikel -->
+                <div class="title">
+                    <a href="{{ item.url }}" target="_blank">{{ item.title }}</a>
+                </div>
+
+                <!-- Info metadata -->
+                <div class="meta">
+                    <strong>Penulis:</strong> {{ item.authors }} |
+                    <strong>Tag:</strong>
+                    {% if item.tags %}
+                        <ul class="tag-list">
+                            {% for tag in item.tags.split(",") %}
+                                <li>{{ tag.strip() }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        -
+                    {% endif %} |
+                    <strong>Tahun:</strong> {{ item.timestamp }}
+                </div>
+
+                <!-- Nilai skor BM25 -->
+                <p class="score">Skor: {{ item.score }}</p>
+
+                <!-- Tampilkan gambar jika ada -->
+                {% if item.image_url %}
+                    <div class="image-container">
+                        <img src="{{ item.image_url }}" alt="Gambar Artikel">
+                    </div>
+                {% endif %}
+
+                <!-- Ringkasan konten + detail -->
+                <div class="content">
+                    <!-- Paragraf preview -->
+                    {% for kalimat in item.preview %}
+                        <p>{{ kalimat }}</p>
+                    {% endfor %}
+                    
+                    <!-- Paragraf lanjutan, ditampilkan jika user klik "Baca Selengkapnya" -->
+                    {% if item.show_detail %}
+                        <div class="read-more-box">
+                            <button class="toggle-btn" onclick="toggleDetail(this)">Baca Selengkapnya</button>
+                            <div class="detail-content" style="display: none; margin-top: 10px;">
+                                {% for paragraf in item.detail %}
+                                    <p>{{ paragraf }}</p>
+                                {% endfor %}
+                                <button class="toggle-btn" onclick="toggleDetail(this)">Tutup</button>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    
+    <!-- Jika query dikirim tapi tidak ada hasil -->
+    {% elif query %}
+        <p>Tidak ada hasil ditemukan.</p>
+    {% endif %}
+</body>
+</html>
